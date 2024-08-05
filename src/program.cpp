@@ -1,5 +1,7 @@
 #include "program.hpp"
 
+#include "spdlog/spdlog.h"
+
 Program::Program() :
   m_window{},
   m_windowSize{800, 600},
@@ -11,6 +13,7 @@ Program::Program() :
   m_window.setVerticalSyncEnabled(true);
 
   resizePixelBuffer();
+  m_texture.setSmooth(true);
   m_sprite.setTexture(m_texture);
 }
 
@@ -40,6 +43,7 @@ void Program::writePixelBuffer()
 
 void Program::run()
 {
+  spdlog::info("main loop started");
   while(m_window.isOpen()) {
     // Events
     sf::Event event;
@@ -54,4 +58,5 @@ void Program::run()
     m_window.draw(m_sprite);
     m_window.display();
   }
+  spdlog::info("main loop ended");
 }
