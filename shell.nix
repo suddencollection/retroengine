@@ -6,7 +6,6 @@ pkgs.mkShell {
     xmake
     cmake
     git
-    busybox
     pkg-config
     p7zip
     neovim
