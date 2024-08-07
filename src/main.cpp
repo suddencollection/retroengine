@@ -10,7 +10,7 @@ int main()
     p.run();
   }
   catch(std::exception& e) {
-    std::cerr << e.what() << '.' << std::endl;
+    std::cerr << "[Exception] " << e.what() << '.' << std::endl;
     return EXIT_FAILURE;
   }
   return EXIT_SUCCESS;

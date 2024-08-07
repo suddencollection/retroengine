@@ -1,13 +1,13 @@
 --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- ---
 
 set_toolchains "gcc"
-set_languages "c++23"
+set_languages "c++20"
 
 set_defaultmode "debug"
 set_policy("build.warning", true)
 
 add_rules("mode.release", "mode.debug")
-add_requires("sfml", "spdlog", "doctest")
+add_requires("sfml", "spdlog", "doctest", "glm")
 
 if is_mode "debug" then
   local sanitize = { "-fsanitize=undefined", "-fsanitize=leak" }
@@ -21,14 +21,14 @@ end
 target "program"
 set_default(true)
 set_kind "binary"
-add_packages("sfml", "spdlog")
+add_packages("sfml", "spdlog", "glm")
 add_files "src/**.cpp"
 add_includedirs "inc"
 
 target "test"
 set_default(false) -- does not run, unless called explictly (xmake run test)
 set_kind "binary"
-add_packages("sfml", "doctest")
+add_packages("doctest", "sfml", "glm")
 add_files("test/doctest.cpp", "test/src/**.cpp")
 add_includedirs "inc"
 add_deps "program"                           -- ensure program is already compiled
