@@ -31,11 +31,11 @@ void Program::resizePixelBuffer()
 
 void Program::writePixelBuffer()
 {
-  auto& screenSize = m_windowSize;
+  glm::ivec2 screenSize{m_windowSize.x, m_windowSize.y};
   auto& framebuffer = m_image;
 
   // Single Pixel Write
-  for(unsigned x = 0; x < screenSize.x; ++x) {
+  for(int x = 0; x < screenSize.x; ++x) {
     //
     // cameraX is the x-coordinate on the camera plane that the
     // current x-coordinate of the screen represents.
@@ -66,33 +66,45 @@ void Program::writePixelBuffer()
     float distance = 0.f; // perpendicular wall distance
     glm::vec2 intersection;
     glm::ivec2 cellPosition;
-    raycast(rayDirection, &intersection, &distance, &cellPosition);
+    bool result = raycast(rayDirection, &intersection, &distance, &cellPosition);
+    assert(result);
 
-    int wallHeight = screenSize.x / distance;
+    int wallHeight = std::min(screenSize.y / distance, static_cast<float>(screenSize.y));
     int floorHeight = (screenSize.y - wallHeight) / 2;
-    int ceillingHeight = floorHeight;
+    int ceillingHeight = screenSize.y - (floorHeight + wallHeight);
+    assert((floorHeight + wallHeight + ceillingHeight) == screenSize.y);
 
     // floor
     int y = 0;
     int maxY = floorHeight;
     while(y < maxY) {
+      assert(y >= 0);
+      assert(y < static_cast<int>(screenSize.y));
       framebuffer.setPixel(x, y, sf::Color::Black);
       ++y;
     }
 
     // wall
-    y = maxY;
     maxY += wallHeight;
     while(y < maxY) {
-      framebuffer.setPixel(x, y, sf::Color::Green);
+      assert(y >= 0);
+      assert(y < static_cast<int>(screenSize.y));
+
+      int maxDistance = 16;
+      sf::Uint8 g_shade = 200 * (1 - (distance / maxDistance));
+      framebuffer.setPixel(x, y, sf::Color{0, g_shade, 0});
       ++y;
     }
 
     // ceilling
-    y = maxY;
     maxY += ceillingHeight;
     while(y < maxY) {
-      framebuffer.setPixel(x, y, sf::Color::White);
+      assert(y >= 0);
+      assert(y < static_cast<int>(screenSize.y));
+
+      int maxDistance = 16;
+      sf::Uint8 shade = 180 * (1 - (distance / maxDistance));
+      framebuffer.setPixel(x, y, sf::Color(shade, shade, shade));
       ++y;
     }
 
@@ -146,7 +158,7 @@ bool Program::raycast(glm::vec2 const& rayDirection, glm::vec2* intersection, fl
     rayLenght.x *= rayLenghtUnitStep.x;     // get ray length, as explained previously
   } else {
     step.x = 1;                                 // right
-    rayLenght.x = (cellPos.x + 1 - rayStart.x); // get remaining (ex: 12 + 1 - 12.55 = 0.45)
+    rayLenght.x = (cellPos.x + 1 - rayStart.x); // get remainder (ex: 12 + 1 - 12.55 = 0.45)
     rayLenght.x *= rayLenghtUnitStep.x;         // get ray length, as explained previously
   }
 
@@ -165,11 +177,11 @@ bool Program::raycast(glm::vec2 const& rayDirection, glm::vec2* intersection, fl
   while(!cellFound && dist < maxDistance) {
     // whichever distance is shorter, is the one walked in
     if(rayLenght.x < rayLenght.y) {
-      cellPos.x -= step.x;
+      cellPos.x += step.x;
       dist = rayLenght.x; // for the next iteration check
       rayLenght.x += rayLenghtUnitStep.x;
     } else {
-      cellPos.y -= step.y;
+      cellPos.y += step.y;
       dist = rayLenght.y; // for the next iteration check
       rayLenght.y += rayLenghtUnitStep.y;
     }
@@ -179,7 +191,8 @@ bool Program::raycast(glm::vec2 const& rayDirection, glm::vec2* intersection, fl
     if(cellPos.x < 0 || cellPos.x >= m_worldWidth ||
        cellPos.y < 0 || cellPos.y >= m_worldHeight) {
       spdlog::error("Out of bounds");
-      spdlog::error("Cell Position: " + std::to_string(cellPos.x) + " " + std::to_string(cellPos.y));
+      spdlog::error("Cell Position: [" + std::to_string(cellPos.x) + " " + std::to_string(cellPos.y) + "]");
+      spdlog::error("Max Position: [" + std::to_string(m_worldWidth) + " " + std::to_string(m_worldHeight) + "]");
       throw std::runtime_error("Out of bounds");
       break;
     }
@@ -198,7 +211,7 @@ bool Program::raycast(glm::vec2 const& rayDirection, glm::vec2* intersection, fl
   return cellFound;
 }
 
-void Program::handleInput(float timeStep)
+void Program::handleKeyboardInput(float timeStep)
 {
   if(sf::Keyboard::isKeyPressed(sf::Keyboard::J)) {
     // left key is pressed: move our character
@@ -216,6 +229,15 @@ void Program::handleInput(float timeStep)
     // left key is pressed: move our character
     m_cameraPos.x += 1 * timeStep;
   }
+}
+
+void Program::handleMouseInput(float timeStep)
+{
+  sf::Vector2i centerPos(m_windowSize.x / 2, m_windowSize.y / 2);
+  sf::Vector2i currentPos{sf::Mouse::getPosition(m_window)};
+  sf::Vector2i movedDistance = (currentPos - centerPos);
+
+  sf::Mouse::setPosition(centerPos, m_window);
 }
 
 void Program::run()
@@ -244,7 +266,10 @@ void Program::run()
           m_window.close();
           break;
         case sf::Event::KeyPressed:
-          handleInput(frameDuration.count());
+          handleKeyboardInput(frameDuration.count());
+          break;
+        case sf::Event::MouseMoved:
+          handleMouseInput(frameDuration.count());
           break;
         default:
           break;

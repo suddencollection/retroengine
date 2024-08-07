@@ -19,7 +19,8 @@ public:
   void run();
   void resizePixelBuffer();
   void writePixelBuffer();
-  void handleInput(float timeStep);
+  void handleKeyboardInput(float timeStep);
+  void handleMouseInput(float timeStep);
 
 private:
   // helper functions
