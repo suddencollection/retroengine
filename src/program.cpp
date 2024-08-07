@@ -34,6 +34,9 @@ void Program::writePixelBuffer()
   glm::ivec2 screenSize{m_windowSize.x, m_windowSize.y};
   auto& framebuffer = m_image;
 
+<<<<<<< HEAD
+=======
+>>>>>>> ad6fe4fd89fb8351889b66a47e9957c67f6d4a42
   for(int x = 0; x < screenSize.x; ++x) {
     //
     // cameraX is the x-coordinate on the camera plane that the
