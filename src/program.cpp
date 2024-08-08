@@ -1,5 +1,7 @@
 #include "program.hpp"
 
+#include <glm/gtc/constants.hpp>
+#include <glm/mat2x2.hpp>
 #include <glm/vec2.hpp>
 #include <spdlog/spdlog.h>
 
@@ -66,7 +68,7 @@ void Program::writePixelBuffer()
     glm::vec2 intersection;
     glm::ivec2 cellPosition;
     bool result = raycast(rayDirection, &intersection, &distance, &cellPosition);
-    assert(result);
+    assert(result && "raycast function error");
 
     int wallHeight = std::min(screenSize.y / distance, static_cast<float>(screenSize.y));
     int floorHeight = (screenSize.y - wallHeight) / 2;
@@ -228,11 +230,36 @@ void Program::handleKeyboardInput(float timeStep)
 
 void Program::handleMouseInput(float timeStep)
 {
+  // static glm::vec2 direction = m_cameraDir;
   sf::Vector2i centerPos(m_windowSize.x / 2, m_windowSize.y / 2);
   sf::Vector2i currentPos{sf::Mouse::getPosition(m_window)};
-  sf::Vector2i movedDistance = (currentPos - centerPos);
 
-  sf::Mouse::setPosition(centerPos, m_window);
+  // float normMovedDist = (currentPos.x / static_cast<float>(m_windowSize.x)) * 2 - 1;
+  // normMovedDist *= glm::pi<float>(); // value in radians
+
+  // [cos(a), -sin(a)]
+  // [sin(a),  cos(a)]
+  auto a = 3 * timeStep;
+  glm::mat2 rotationMatrix = {
+    std::cos(a),
+    std::sin(a),
+    -std::sin(a),
+    std::cos(a),
+  };
+
+  m_cameraDir = m_cameraDir * rotationMatrix;
+
+  // camera direction rotation
+  // direction = m_cameraDir * rotationMatrix * timeStep;
+
+  // float rotSpeed = normMovedDist * timeStep;
+  // double oldDirX = m_cameraDir.x;
+  // m_cameraDir.x = m_cameraDir.x * cos(-rotSpeed) - m_cameraDir.y * sin(-rotSpeed);
+  // m_cameraDir.y = oldDirX * sin(-rotSpeed) + m_cameraDir.y * cos(-rotSpeed);
+
+  // sf::Mouse::setPosition(centerPos, m_window);
+  spdlog::info("current pos " + std::to_string(currentPos.x) + " " + std::to_string(currentPos.y));
+  spdlog::info("mouse dir [" + std::to_string(m_cameraDir.x) + " " + std::to_string(m_cameraDir.y) + "]");
 }
 
 void Program::run()
