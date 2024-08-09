@@ -7,16 +7,17 @@
 
 Program::Program() :
   m_window{},
-  m_windowSize{800, 600},
+  m_windowSize{1200, 600},
   m_image{},
   m_texture{},
   m_sprite{},
-  m_cameraPos{m_worldWidth / 2, m_worldHeight / 2},
+  m_cameraSensitivity{8},
+  m_cameraPos{6, 12},
   m_cameraDir{0, 1},
   m_cameraPlane{1, 0}
 
 {
-  m_window.create(sf::VideoMode(m_windowSize.x, m_windowSize.y), "Raycaster");
+  m_window.create(sf::VideoMode(m_windowSize.x, m_windowSize.y), "");
   m_window.setVerticalSyncEnabled(true);
 
   resizePixelBuffer();
@@ -64,10 +65,12 @@ void Program::writePixelBuffer()
       m_cameraDir.y + m_cameraPlane.y * cameraX,
     };
 
+    glm::vec2 rayStart = m_cameraPos;
+
     float distance = 0.f; // perpendicular wall distance
     glm::vec2 intersection;
     glm::ivec2 cellPosition;
-    bool result = raycast(rayDirection, &intersection, &distance, &cellPosition);
+    bool result = raycast(rayDirection, rayStart, &intersection, &distance, &cellPosition);
     assert(result && "raycast function error");
 
     int wallHeight = std::min(screenSize.y / distance, static_cast<float>(screenSize.y));
@@ -121,12 +124,11 @@ void Program::writePixelBuffer()
   m_texture.update(m_image);
 }
 
-bool Program::raycast(glm::vec2 const& rayDirection, glm::vec2* intersection, float* distance, glm::ivec2* cellPosition)
+bool Program::raycast(glm::vec2 const& rayDirection, glm::vec2 const& rayStart, glm::vec2* intersection, float* distance, glm::ivec2* cellPosition)
 {
   //// The DDA Algorithm
 
   // aliases
-  auto& rayStart = m_cameraPos;
   auto& rayDir = rayDirection;
 
   // which cell of the map we're in
@@ -188,10 +190,8 @@ bool Program::raycast(glm::vec2 const& rayDirection, glm::vec2* intersection, fl
     }
 
     // out of bounds
-    // shouldn't be necessary, as long as the world is enclosed in walls
     if(cellPos.x < 0 || cellPos.x >= m_worldWidth ||
        cellPos.y < 0 || cellPos.y >= m_worldHeight) {
-      spdlog::error("Out of bounds");
       spdlog::error("Cell Position: [" + std::to_string(cellPos.x) + " " + std::to_string(cellPos.y) + "]");
       spdlog::error("Max Position: [" + std::to_string(m_worldWidth) + " " + std::to_string(m_worldHeight) + "]");
       throw std::runtime_error("Out of bounds");
@@ -226,9 +226,15 @@ void Program::handleKeyboardInput(float timeStep)
   if(sf::Keyboard::isKeyPressed(sf::Keyboard::SemiColon)) {
     m_cameraPos.x += 1 * timeStep;
   }
+  if(sf::Keyboard::isKeyPressed(sf::Keyboard::A)) {
+    rotateCamera(m_cameraSensitivity * timeStep);
+  }
+  if(sf::Keyboard::isKeyPressed(sf::Keyboard::F)) {
+    rotateCamera(m_cameraSensitivity * timeStep);
+  }
 }
 
-void Program::handleMouseInput(float timeStep)
+void Program::rotateCamera(float angle)
 {
   // static glm::vec2 direction = m_cameraDir;
   sf::Vector2i centerPos(m_windowSize.x / 2, m_windowSize.y / 2);
@@ -239,7 +245,7 @@ void Program::handleMouseInput(float timeStep)
 
   // [cos(a), -sin(a)]
   // [sin(a),  cos(a)]
-  auto a = 3 * timeStep;
+  auto& a = angle;
   glm::mat2 rotationMatrix = {
     std::cos(a),
     std::sin(a),
@@ -247,7 +253,7 @@ void Program::handleMouseInput(float timeStep)
     std::cos(a),
   };
 
-  m_cameraDir = m_cameraDir * rotationMatrix;
+  m_cameraDir = (rotationMatrix * m_cameraDir);
 
   // camera direction rotation
   // direction = m_cameraDir * rotationMatrix * timeStep;
@@ -290,8 +296,8 @@ void Program::run()
         case sf::Event::KeyPressed:
           handleKeyboardInput(frameDuration.count());
           break;
-        case sf::Event::MouseMoved:
-          handleMouseInput(frameDuration.count());
+        case sf::Event::Resized:
+          resizePixelBuffer();
           break;
         default:
           break;
