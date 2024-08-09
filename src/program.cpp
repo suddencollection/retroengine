@@ -1,5 +1,11 @@
 #include "program.hpp"
 
+#define GLM_ENABLE_EXPERIMENTAL
+
+#include <glm/gtc/constants.hpp>
+#include <glm/gtc/epsilon.hpp>
+#include <glm/gtx/rotate_vector.hpp>
+#include <glm/mat2x2.hpp>
 #include <glm/vec2.hpp>
 #include <spdlog/spdlog.h>
 
@@ -9,7 +15,8 @@ Program::Program() :
   m_image{},
   m_texture{},
   m_sprite{},
-  m_cameraPos{m_worldWidth / 2, m_worldHeight / 2},
+  m_cameraSensitivity{2},
+  m_cameraPos{6, 12},
   m_cameraDir{0, 1},
   m_cameraPlane{1, 0}
 
@@ -34,9 +41,6 @@ void Program::writePixelBuffer()
   glm::ivec2 screenSize{m_windowSize.x, m_windowSize.y};
   auto& framebuffer = m_image;
 
-<<<<<<< HEAD
-=======
->>>>>>> ad6fe4fd89fb8351889b66a47e9957c67f6d4a42
   for(int x = 0; x < screenSize.x; ++x) {
     //
     // cameraX is the x-coordinate on the camera plane that the
@@ -76,13 +80,13 @@ void Program::writePixelBuffer()
     int ceillingHeight = screenSize.y - (floorHeight + wallHeight);
     assert((floorHeight + wallHeight + ceillingHeight) == screenSize.y);
 
-    // floor
+    // ceilling
     int y = 0;
-    int maxY = floorHeight;
+    int maxY = ceillingHeight;
     while(y < maxY) {
       assert(y >= 0);
       assert(y < static_cast<int>(screenSize.y));
-      framebuffer.setPixel(x, y, sf::Color::Black);
+      framebuffer.setPixel(x, y, sf::Color::Cyan);
       ++y;
     }
 
@@ -93,20 +97,18 @@ void Program::writePixelBuffer()
       assert(y < static_cast<int>(screenSize.y));
 
       int maxDistance = 16;
-      sf::Uint8 g_shade = 200 * (1 - (distance / maxDistance));
-      framebuffer.setPixel(x, y, sf::Color{0, g_shade, 0});
+      sf::Uint8 shade = 200 * (1 - std::min(1.f, distance / maxDistance));
+      framebuffer.setPixel(x, y, sf::Color{shade, shade, shade});
       ++y;
     }
 
-    // ceilling
-    maxY += ceillingHeight;
+    // floor
+    maxY += floorHeight;
     while(y < maxY) {
       assert(y >= 0);
       assert(y < static_cast<int>(screenSize.y));
 
-      int maxDistance = 16;
-      sf::Uint8 shade = 180 * (1 - (distance / maxDistance));
-      framebuffer.setPixel(x, y, sf::Color(shade, shade, shade));
+      framebuffer.setPixel(x, y, sf::Color(100.f, 100.f, 100.f));
       ++y;
     }
 
@@ -216,26 +218,68 @@ bool Program::raycast(glm::vec2 const& rayDirection, glm::vec2* intersection, fl
 void Program::handleKeyboardInput(float timeStep)
 {
   if(sf::Keyboard::isKeyPressed(sf::Keyboard::J)) {
-    m_cameraPos.x += -1 * timeStep;
+    m_cameraPos += glm::rotate(m_cameraDir, glm::radians(90.f)) * timeStep;
   }
   if(sf::Keyboard::isKeyPressed(sf::Keyboard::K)) {
-    m_cameraPos.y += -1 * timeStep;
+    m_cameraPos += glm::rotate(m_cameraDir, glm::radians(180.f)) * timeStep;
   }
   if(sf::Keyboard::isKeyPressed(sf::Keyboard::L)) {
-    m_cameraPos.y += 1 * timeStep;
+    m_cameraPos += glm::rotate(m_cameraDir, glm::radians(0.f)) * timeStep;
   }
   if(sf::Keyboard::isKeyPressed(sf::Keyboard::SemiColon)) {
-    m_cameraPos.x += 1 * timeStep;
+    m_cameraPos += glm::rotate(m_cameraDir, glm::radians(-90.f)) * timeStep;
+  }
+  if(sf::Keyboard::isKeyPressed(sf::Keyboard::A)) {
+    rotateCamera(m_cameraSensitivity * timeStep);
+  }
+  if(sf::Keyboard::isKeyPressed(sf::Keyboard::F)) {
+    rotateCamera(-m_cameraSensitivity * timeStep);
   }
 }
 
 void Program::handleMouseInput(float timeStep)
 {
-  sf::Vector2i centerPos(m_windowSize.x / 2, m_windowSize.y / 2);
-  sf::Vector2i currentPos{sf::Mouse::getPosition(m_window)};
-  sf::Vector2i movedDistance = (currentPos - centerPos);
+  // [cos(a), -sin(a)]
+  // [sin(a),  cos(a)]
+  // auto& a = angle;
+  // glm::mat2 rotationMatrix = {
+  //   std::cos(a),
+  //   std::sin(a),
+  //   -std::sin(a),
+  //   std::cos(a),
+  // };
 
-  sf::Mouse::setPosition(centerPos, m_window);
+  // m_cameraDir = (rotationMatrix * m_cameraDir);
+  // m_cameraPlane = (rotationMatrix * m_cameraPlane);
+
+  // camera direction rotation
+  // float rotSpeed = angle;
+
+  // camera dir
+  // double oldDirX = m_cameraDir.x;
+  // m_cameraDir.x = m_cameraDir.x * cos(-rotSpeed) - m_cameraDir.y * sin(-rotSpeed);
+  // m_cameraDir.y = oldDirX * sin(-rotSpeed) + m_cameraDir.y * cos(-rotSpeed);
+  //
+  // // camera plane
+  // oldDirX = m_cameraPlane.x;
+  // m_cameraPlane.x = m_cameraPlane.x * cos(-rotSpeed) - m_cameraPlane.y * sin(-rotSpeed);
+  // m_cameraPlane.y = oldDirX * sin(-rotSpeed) + m_cameraPlane.y * cos(-rotSpeed);
+
+  // painless rotation
+  m_cameraDir = glm::rotate(m_cameraDir, angle);
+  m_cameraPlane = glm::rotate(m_cameraPlane, angle);
+
+  // some checks, for my sanity
+  bool areUnitVectors =
+    glm::epsilonEqual(glm::length(m_cameraDir), 1.f, 0.000001f) &&
+    glm::epsilonEqual(glm::length(m_cameraPlane), 1.f, 0.000001f);
+
+  if(!areUnitVectors) {
+    spdlog::info("cameraDir [" + std::to_string(m_cameraDir.x) + " " + std::to_string(m_cameraDir.y) + "]");
+    spdlog::info("width [" + std::to_string(glm::length(m_cameraDir)) + "]");
+    spdlog::info("angle [" + std::to_string(angle) + "]");
+    throw std::runtime_error("cameraDir is not an unit vector.");
+  }
 }
 
 void Program::run()
