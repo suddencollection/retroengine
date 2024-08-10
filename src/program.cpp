@@ -3,6 +3,7 @@
 #define GLM_ENABLE_EXPERIMENTAL
 
 #include <SFML/Window/Keyboard.hpp>
+#include <cstdlib>
 #include <glm/gtc/constants.hpp>
 #include <glm/gtc/epsilon.hpp>
 #include <glm/gtx/rotate_vector.hpp>
@@ -16,6 +17,7 @@ Program::Program() :
   m_image{},
   m_texture{},
   m_sprite{},
+  m_textureWall{},
   m_cameraSensitivity{3},
   m_cameraVelocity{2},
   m_cameraPos{6, 12},
@@ -23,12 +25,28 @@ Program::Program() :
   m_cameraPlane{0, 2 / 3.0}
 
 {
+  loadTextures();
+
   m_window.create(sf::VideoMode(m_windowSize.x, m_windowSize.y), "");
   m_window.setVerticalSyncEnabled(true);
-
   resizePixelBuffer();
   m_texture.setSmooth(true);
   m_sprite.setTexture(m_texture);
+}
+
+void Program::loadTextures()
+{
+  // assets path
+  char* env = std::getenv("ASSETS_PATH");
+  if(!env) {
+    throw std::runtime_error("Undefined ASSETS_PATH environment variable.");
+  }
+  std::string assetsPath{env};
+
+  // loading
+  if(!m_textureWall.loadFromFile(assetsPath + "textures/256_Marble 01.png")) {
+    throw std::runtime_error("Failed to load wall texture");
+  }
 }
 
 void Program::resizePixelBuffer()
@@ -126,12 +144,16 @@ void Program::writePixelBuffer()
 
     // floor
     maxY += floorHeight;
+    float pixelCount = 0.f;
     while(y < maxY) {
       assert(y >= 0);
       assert(y < static_cast<int>(screenSize.y));
 
-      framebuffer.setPixel(x, y, sf::Color(100.f, 100.f, 100.f));
+      float range = pixelCount / floorHeight;
+      sf::Uint8 shade = 130.f * range;
+      framebuffer.setPixel(x, y, sf::Color(shade, shade, shade));
       ++y;
+      ++pixelCount;
     }
 
     // for(unsigned y = 0; y < m_windowSize.y; ++y) {

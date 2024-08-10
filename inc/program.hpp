@@ -17,6 +17,7 @@ public:
   ~Program() = default;
 
   void run();
+  void loadTextures();
   void resizePixelBuffer();
   void writePixelBuffer();
   void handleKeyboardInput(float timeStep);
@@ -32,6 +33,9 @@ private:
   sf::Image m_image;
   sf::Texture m_texture;
   sf::Sprite m_sprite;
+
+  // Textures
+  sf::Image m_textureWall;
 
   // Camera
   float m_cameraSensitivity;

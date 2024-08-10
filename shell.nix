@@ -22,6 +22,7 @@ pkgs.mkShell {
   ];
   shellHook = ''
     # export DEBUG=1
+    export ASSETS_PATH=$(pwd)/assets/
   '';
 }
 
