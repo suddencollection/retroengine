@@ -2,6 +2,7 @@
 
 #define GLM_ENABLE_EXPERIMENTAL
 
+#include <SFML/Window/Keyboard.hpp>
 #include <glm/gtc/constants.hpp>
 #include <glm/gtc/epsilon.hpp>
 #include <glm/gtx/rotate_vector.hpp>
@@ -15,10 +16,11 @@ Program::Program() :
   m_image{},
   m_texture{},
   m_sprite{},
-  m_cameraSensitivity{2},
+  m_cameraSensitivity{3},
+  m_cameraVelocity{2},
   m_cameraPos{6, 12},
-  m_cameraDir{0, 1},
-  m_cameraPlane{1, 0}
+  m_cameraDir{-1, 0},
+  m_cameraPlane{0, 2 / 3.0}
 
 {
   m_window.create(sf::VideoMode(m_windowSize.x, m_windowSize.y), "");
@@ -34,6 +36,12 @@ void Program::resizePixelBuffer()
   m_windowSize = m_window.getSize();
   m_image.create(m_windowSize.x, m_windowSize.y); // Pixel Buffer
   m_texture.create(m_windowSize.x, m_windowSize.y);
+
+  // camera plane
+  // float aspectRatio = m_windowSize.x / static_cast<float>(m_windowSize.y);
+  // m_cameraPlane = glm::normalize(m_cameraPlane) * aspectRatio / 2.f;
+
+  spdlog::info("Window resize [" + std::to_string(m_windowSize.x) + " " + std::to_string(m_windowSize.y) + "]");
 }
 
 void Program::writePixelBuffer()
@@ -50,10 +58,10 @@ void Program::writePixelBuffer()
     // the center of the screen gets coordinate 0,
     // and the left side of the screen gets coordinate -1
     //
-    double cameraX = 0.0;
-    cameraX = x / static_cast<double>(m_windowSize.x); // normalize the x position between 0 and 1
-    cameraX *= 2;                                      // double it, now it's between 0 and 2
-    cameraX -= 1;                                      // subtract 1, now it's between -1 and 1
+    float cameraX = 0.0;
+    cameraX = x / static_cast<float>(screenSize.x); // normalize the x position between 0 and 1
+    cameraX *= 2;                                   // double it, now it's between 0 and 2
+    cameraX -= 1;                                   // subtract 1, now it's between -1 and 1
 
     // We don't use the Euclidean distance to the point representing
     // player,but instead the distance to the camera plane (or, the
@@ -64,23 +72,35 @@ void Program::writePixelBuffer()
     // you use the real distance, where all the walls
     // become rounded, and can make you sick if you rotate.
     //
-    glm::vec2 rayDirection{
+    auto rayDirection = glm::normalize(glm::vec2{
       m_cameraDir.x + m_cameraPlane.x * cameraX,
       m_cameraDir.y + m_cameraPlane.y * cameraX,
-    };
-
-    glm::vec2 rayStart = m_cameraPos;
-
+    });
+    glm::vec2& rayStart = m_cameraPos;
     float distance = 0.f; // perpendicular wall distance
     glm::vec2 intersection;
     glm::ivec2 cellPosition;
     bool result = raycast(rayDirection, rayStart, &intersection, &distance, &cellPosition);
     assert(result && "raycast function error");
 
-    int wallHeight = std::min(screenSize.y / distance, static_cast<float>(screenSize.y));
-    int floorHeight = (screenSize.y - wallHeight) / 2;
-    int ceillingHeight = screenSize.y - (floorHeight + wallHeight);
-    assert((floorHeight + wallHeight + ceillingHeight) == screenSize.y);
+    // calculate the perpendicular distance, to avoid fisheye effect
+    //
+    // when you're really close to a wall, the euclidean distance will be really small,
+    // but the planeLength will still be increasing as cameraX increases, resulting in values
+    // that, apparently, don't form a triangle. To fix this I simply picked the smallest of
+    // the distances to substitute the perpendicular one.
+    //
+    // The result, as it seems to be, is that the vertical line of pixels filled entirely by
+    // the wall gets repeated for the remaining planeLength positions. I still don't know
+    // if this is gonna play well with textures, but its a working fix, for now.
+    //
+    float planeLength = std::min(glm::length(m_cameraPlane * cameraX), distance);
+    float perpDistance = std::sqrt(distance * distance - planeLength * planeLength); // pythagoras
+
+    unsigned wallHeight = std::min(screenSize.y / perpDistance, static_cast<float>(screenSize.y));
+    unsigned floorHeight = (screenSize.y - wallHeight) / 2;
+    unsigned ceillingHeight = screenSize.y - (floorHeight + wallHeight);
+    assert((floorHeight + wallHeight + ceillingHeight) == unsigned(screenSize.y));
 
     // ceilling
     int y = 0;
@@ -99,7 +119,7 @@ void Program::writePixelBuffer()
       assert(y < static_cast<int>(screenSize.y));
 
       int maxDistance = 16;
-      sf::Uint8 shade = 200 * (1 - std::min(1.f, distance / maxDistance));
+      sf::Uint8 shade = 200 * (1 - std::min(1.f, perpDistance / maxDistance));
       framebuffer.setPixel(x, y, sf::Color{shade, shade, shade});
       ++y;
     }
@@ -126,12 +146,19 @@ void Program::writePixelBuffer()
   m_texture.update(m_image);
 }
 
-bool Program::raycast(glm::vec2 const& rayDirection, glm::vec2 const& rayStart, glm::vec2* intersection, float* distance, glm::ivec2* cellPosition)
+bool Program::raycast(glm::vec2 const& unitRayDirection, glm::vec2 const& rayStart, glm::vec2* intersection, float* distance, glm::ivec2* cellPosition)
 {
-  //// The DDA Algorithm
+  // checks
+  bool isUnitVector = glm::epsilonEqual(glm::length(unitRayDirection), 1.f, 0.00001f);
+  if(!isUnitVector) {
+    spdlog::error("non unit vector of length {}", glm::length(unitRayDirection));
+    throw std::runtime_error("unitRayDirection is not an unit vector");
+  }
 
   // aliases
-  auto& rayDir = rayDirection;
+  auto& rayDir = unitRayDirection;
+
+  //// The DDA Algorithm
 
   // which cell of the map we're in
   glm::ivec2 cellPos = rayStart; // truncated (ex: 1.33 becomes 1)
@@ -146,8 +173,8 @@ bool Program::raycast(glm::vec2 const& rayDirection, glm::vec2 const& rayStart, 
   // Division by 0 is handed properly with floating point numbers
   //
   glm::vec2 rayLenghtUnitStep = {
-    std::sqrt(1 + (rayDir.y / rayDirection.x) * (rayDirection.y / rayDirection.x)),
-    std::sqrt((rayDir.x / rayDirection.y) * (rayDirection.x / rayDirection.y) + 1),
+    std::sqrt(1 + (rayDir.y / rayDir.x) * (rayDir.y / rayDir.x)),
+    std::sqrt((rayDir.x / rayDir.y) * (rayDir.x / rayDir.y) + 1),
   };
 
   // total (accumulated) ray length from starting position
@@ -177,8 +204,9 @@ bool Program::raycast(glm::vec2 const& rayDirection, glm::vec2 const& rayStart, 
   }
 
   bool cellFound = false;
-  float maxDistance = 128.f; // so we don't loop forever
-  float dist = 0.f;          // current distance
+  float maxDistance = 128.f; // so we don't loop forever.
+  float dist = 0.f;          // current distance.
+
   while(!cellFound && dist < maxDistance) {
     // whichever distance is shorter, is the one walked in
     if(rayLenght.x < rayLenght.y) {
@@ -197,7 +225,6 @@ bool Program::raycast(glm::vec2 const& rayDirection, glm::vec2 const& rayStart, 
       spdlog::error("Cell Position: [" + std::to_string(cellPos.x) + " " + std::to_string(cellPos.y) + "]");
       spdlog::error("Max Position: [" + std::to_string(m_worldWidth) + " " + std::to_string(m_worldHeight) + "]");
       throw std::runtime_error("Out of bounds");
-      break;
     }
 
     // whether some non empty cell was found
@@ -209,71 +236,54 @@ bool Program::raycast(glm::vec2 const& rayDirection, glm::vec2 const& rayStart, 
   if(cellFound) {
     *intersection = rayStart + rayDir * dist; // final intersection position
     *distance = dist;                         // final distance
-    *cellPosition = cellPos;
+    *cellPosition = cellPos;                  // world coords
   }
+
   return cellFound;
 }
 
 void Program::handleKeyboardInput(float timeStep)
 {
+  // left right movement
   if(sf::Keyboard::isKeyPressed(sf::Keyboard::J)) {
-    m_cameraPos += glm::rotate(m_cameraDir, glm::radians(90.f)) * timeStep;
+    m_cameraPos += glm::rotate(m_cameraVelocity * m_cameraDir, glm::radians(90.f)) * timeStep;
+  } else if(sf::Keyboard::isKeyPressed(sf::Keyboard::SemiColon)) {
+    m_cameraPos += glm::rotate(m_cameraVelocity * m_cameraDir, glm::radians(-90.f)) * timeStep;
   }
-  if(sf::Keyboard::isKeyPressed(sf::Keyboard::K)) {
-    m_cameraPos += glm::rotate(m_cameraDir, glm::radians(180.f)) * timeStep;
-  }
+
+  // front back movement
   if(sf::Keyboard::isKeyPressed(sf::Keyboard::L)) {
-    m_cameraPos += glm::rotate(m_cameraDir, glm::radians(0.f)) * timeStep;
+    m_cameraPos += glm::rotate(m_cameraVelocity * m_cameraDir, glm::radians(0.f)) * timeStep;
+  } else if(sf::Keyboard::isKeyPressed(sf::Keyboard::K)) {
+    m_cameraPos += glm::rotate(m_cameraVelocity * m_cameraDir, glm::radians(180.f)) * timeStep;
   }
-  if(sf::Keyboard::isKeyPressed(sf::Keyboard::SemiColon)) {
-    m_cameraPos += glm::rotate(m_cameraDir, glm::radians(-90.f)) * timeStep;
-  }
+
+  // camera rotation
   if(sf::Keyboard::isKeyPressed(sf::Keyboard::A)) {
     rotateCamera(m_cameraSensitivity * timeStep);
-  }
-  if(sf::Keyboard::isKeyPressed(sf::Keyboard::F)) {
+  } else if(sf::Keyboard::isKeyPressed(sf::Keyboard::F)) {
     rotateCamera(-m_cameraSensitivity * timeStep);
+  }
+
+  // camera plane
+  if(sf::Keyboard::isKeyPressed(sf::Keyboard::Add)) {
+    m_cameraPlane *= 1 + (0.6 * timeStep); // 1.6x
+    spdlog::info("cameraPlane [" + std::to_string(m_cameraPlane.x) + " " + std::to_string(m_cameraPlane.y) + "]");
+  } else if(sf::Keyboard::isKeyPressed(sf::Keyboard::Subtract)) {
+    m_cameraPlane *= 1 - (0.6 * timeStep); // 0.6x
+    spdlog::info("cameraPlane [" + std::to_string(m_cameraPlane.x) + " " + std::to_string(m_cameraPlane.y) + "]");
   }
 }
 
 void Program::rotateCamera(float angle)
 {
-  // [cos(a), -sin(a)]
-  // [sin(a),  cos(a)]
-  // auto& a = angle;
-  // glm::mat2 rotationMatrix = {
-  //   std::cos(a),
-  //   std::sin(a),
-  //   -std::sin(a),
-  //   std::cos(a),
-  // };
-
-  // m_cameraDir = (rotationMatrix * m_cameraDir);
-  // m_cameraPlane = (rotationMatrix * m_cameraPlane);
-
-  // camera direction rotation
-  // float rotSpeed = angle;
-
-  // camera dir
-  // double oldDirX = m_cameraDir.x;
-  // m_cameraDir.x = m_cameraDir.x * cos(-rotSpeed) - m_cameraDir.y * sin(-rotSpeed);
-  // m_cameraDir.y = oldDirX * sin(-rotSpeed) + m_cameraDir.y * cos(-rotSpeed);
-  //
-  // // camera plane
-  // oldDirX = m_cameraPlane.x;
-  // m_cameraPlane.x = m_cameraPlane.x * cos(-rotSpeed) - m_cameraPlane.y * sin(-rotSpeed);
-  // m_cameraPlane.y = oldDirX * sin(-rotSpeed) + m_cameraPlane.y * cos(-rotSpeed);
-
   // painless rotation
   m_cameraDir = glm::rotate(m_cameraDir, angle);
   m_cameraPlane = glm::rotate(m_cameraPlane, angle);
 
-  // some checks, for my sanity
-  bool areUnitVectors =
-    glm::epsilonEqual(glm::length(m_cameraDir), 1.f, 0.000001f) &&
-    glm::epsilonEqual(glm::length(m_cameraPlane), 1.f, 0.000001f);
-
-  if(!areUnitVectors) {
+  // sanity checks
+  bool isUnitVector = glm::epsilonEqual(glm::length(m_cameraDir), 1.f, 0.00001f);
+  if(!isUnitVector) {
     spdlog::info("cameraDir [" + std::to_string(m_cameraDir.x) + " " + std::to_string(m_cameraDir.y) + "]");
     spdlog::info("width [" + std::to_string(glm::length(m_cameraDir)) + "]");
     spdlog::info("angle [" + std::to_string(angle) + "]");
@@ -289,7 +299,6 @@ void Program::run()
   auto& now = std::chrono::steady_clock::now;
   using Timepoint = std::chrono::steady_clock::time_point;
   using Duration = std::chrono::duration<double>; // by default, represented in seconds
-  //
   Timepoint frameStartTime = now();
   Timepoint frameEndTime;
   Duration frameDuration;
@@ -299,23 +308,24 @@ void Program::run()
     frameDuration = frameEndTime - frameStartTime;
     frameStartTime = frameEndTime;
 
-    // Events
+    // Events and Input
     sf::Event event;
     while(m_window.pollEvent(event)) {
       switch(event.type) {
         case sf::Event::Closed:
           m_window.close();
           break;
-        case sf::Event::KeyPressed:
-          handleKeyboardInput(frameDuration.count());
-          break;
         case sf::Event::Resized:
-          resizePixelBuffer();
+          // unecessary for now
+          // resizePixelBuffer();
           break;
         default:
           break;
       }
     }
+
+    // input
+    handleKeyboardInput(frameDuration.count());
 
     // Rendering
     writePixelBuffer();

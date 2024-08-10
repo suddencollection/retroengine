@@ -23,7 +23,7 @@ public:
 
 private:
   // helper functions
-  bool raycast(glm::vec2 const& rayDirection, glm::vec2 const& rayStart, glm::vec2* intersection, float* distance, glm::ivec2* cellPosition);
+  bool raycast(glm::vec2 const& unitRayDirection, glm::vec2 const& rayStart, glm::vec2* intersection, float* distance, glm::ivec2* cellPosition);
   void rotateCamera(float angle);
 
   // SFML
@@ -35,6 +35,7 @@ private:
 
   // Camera
   float m_cameraSensitivity;
+  float m_cameraVelocity;
   glm::vec2 m_cameraPos;
   // Here the direction vector is a bit longer than the
   // camera plane, so the FOV will be smaller than 90°
