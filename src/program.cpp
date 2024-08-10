@@ -44,7 +44,7 @@ void Program::loadTextures()
   std::string assetsPath{env};
 
   // loading
-  if(!m_textureWall.loadFromFile(assetsPath + "textures/256_Marble 01.png")) {
+  if(!m_textureWall.loadFromFile(assetsPath + "textures/256_Tiles Circle 08.png")) {
     throw std::runtime_error("Failed to load wall texture");
   }
 }
@@ -98,8 +98,8 @@ void Program::writePixelBuffer()
     float distance = 0.f; // perpendicular wall distance
     glm::vec2 intersection;
     glm::ivec2 cellPosition;
-    bool result = raycast(rayDirection, rayStart, &intersection, &distance, &cellPosition);
-    assert(result && "raycast function error");
+    Side hitSide = raycast(rayStart, rayDirection, &intersection, &distance, &cellPosition);
+    assert(hitSide != Side::Invalid && "raycast function error");
 
     // calculate the perpendicular distance, to avoid fisheye effect
     //
@@ -132,28 +132,46 @@ void Program::writePixelBuffer()
 
     // wall
     maxY += wallHeight;
+
+    float coordX = 0.f;
+    glm::vec2 unitIntersection = (intersection - glm::trunc(intersection));
+    coordX = hitSide == Side::Horizontal ? unitIntersection.x :
+                                           unitIntersection.y;
+    float coordY = 0.f;
+    int pixelCount = 0;
+    spdlog::info("coordX {}", coordX);
+    assert(coordX >= 0 && coordX <= 1.f);
     while(y < maxY) {
       assert(y >= 0);
       assert(y < static_cast<int>(screenSize.y));
 
-      int maxDistance = 16;
-      sf::Uint8 shade = 200 * (1 - std::min(1.f, perpDistance / maxDistance));
-      framebuffer.setPixel(x, y, sf::Color{shade, shade, shade});
+      coordY = static_cast<float>(pixelCount) / wallHeight;
+      glm::vec2 pixelCoords{
+        coordX * (m_textureWall.getSize().x - 1),
+        coordY * (m_textureWall.getSize().y - 1),
+      };
+
+      framebuffer.setPixel(x, y, m_textureWall.getPixel(pixelCoords.x, pixelCoords.y));
+
+      // int maxDistance = 16;
+      // sf::Uint8 shade = 200 * (1 - std::min(1.f, perpDistance / maxDistance));
+      // framebuffer.setPixel(x, y, sf::Color{shade, shade, shade});
+      ++pixelCount;
       ++y;
     }
 
     // floor
     maxY += floorHeight;
-    float pixelCount = 0.f;
+    pixelCount = 0.f;
     while(y < maxY) {
       assert(y >= 0);
       assert(y < static_cast<int>(screenSize.y));
 
-      float range = pixelCount / floorHeight;
+      float range = static_cast<float>(pixelCount) / floorHeight;
       sf::Uint8 shade = 130.f * range;
       framebuffer.setPixel(x, y, sf::Color(shade, shade, shade));
-      ++y;
       ++pixelCount;
+      ++y;
     }
 
     // for(unsigned y = 0; y < m_windowSize.y; ++y) {
@@ -168,7 +186,12 @@ void Program::writePixelBuffer()
   m_texture.update(m_image);
 }
 
-bool Program::raycast(glm::vec2 const& unitRayDirection, glm::vec2 const& rayStart, glm::vec2* intersection, float* distance, glm::ivec2* cellPosition)
+Program::Side Program::raycast(
+  glm::vec2 const& rayStart,
+  glm::vec2 const& unitRayDirection,
+  glm::vec2* intersection,
+  float* distance,
+  glm::ivec2* cellPosition)
 {
   // checks
   bool isUnitVector = glm::epsilonEqual(glm::length(unitRayDirection), 1.f, 0.00001f);
@@ -226,8 +249,9 @@ bool Program::raycast(glm::vec2 const& unitRayDirection, glm::vec2 const& raySta
   }
 
   bool cellFound = false;
-  float maxDistance = 128.f; // so we don't loop forever.
-  float dist = 0.f;          // current distance.
+  float maxDistance = 128.f;          // so we don't loop forever.
+  float dist = 0.f;                   // current distance.
+  Program::Side side = Side::Invalid; // side hit
 
   while(!cellFound && dist < maxDistance) {
     // whichever distance is shorter, is the one walked in
@@ -235,10 +259,12 @@ bool Program::raycast(glm::vec2 const& unitRayDirection, glm::vec2 const& raySta
       cellPos.x += step.x;
       dist = rayLenght.x; // for the next iteration check
       rayLenght.x += rayLenghtUnitStep.x;
+      side = Side::Vertical;
     } else {
       cellPos.y += step.y;
       dist = rayLenght.y; // for the next iteration check
       rayLenght.y += rayLenghtUnitStep.y;
+      side = Side::Horizontal;
     }
 
     // out of bounds
@@ -261,7 +287,7 @@ bool Program::raycast(glm::vec2 const& unitRayDirection, glm::vec2 const& raySta
     *cellPosition = cellPos;                  // world coords
   }
 
-  return cellFound;
+  return cellFound ? side : Side::Invalid;
 }
 
 void Program::handleKeyboardInput(float timeStep)

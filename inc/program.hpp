@@ -23,8 +23,21 @@ public:
   void handleKeyboardInput(float timeStep);
 
 private:
+  enum class Side
+  {
+    Invalid = -1,
+    Horizontal = 0,
+    Vertical = 1,
+  };
+
   // helper functions
-  bool raycast(glm::vec2 const& unitRayDirection, glm::vec2 const& rayStart, glm::vec2* intersection, float* distance, glm::ivec2* cellPosition);
+  auto raycast(
+    glm::vec2 const& rayStart,
+    glm::vec2 const& unitRayDirection,
+    glm::vec2* intersection,
+    float* distance,
+    glm::ivec2* cellPosition) -> Side;
+
   void rotateCamera(float angle);
 
   // SFML
