@@ -27,7 +27,7 @@ Program::Program() :
 {
   loadTextures();
 
-  m_window.create(sf::VideoMode(m_windowSize.x, m_windowSize.y, sf::Style::Titlebar | sf::Style::Close), "");
+  m_window.create(sf::VideoMode(m_windowSize.x, m_windowSize.y, sf::Style::None), "");
   m_window.setVerticalSyncEnabled(true);
   resizePixelBuffer();
   m_texture.setSmooth(true);
@@ -139,7 +139,6 @@ void Program::writePixelBuffer()
                                            unitIntersection.y;
     float coordY = 0.f;
     int pixelCount = 0;
-    spdlog::info("coordX {}", coordX);
     assert(coordX >= 0 && coordX <= 1.f);
     while(y < maxY) {
       assert(y >= 0);
@@ -292,18 +291,20 @@ Program::Side Program::raycast(
 
 void Program::handleKeyboardInput(float timeStep)
 {
-  // left right movement
+  // movement
+  glm::vec2 newPos = m_cameraPos;
   if(sf::Keyboard::isKeyPressed(sf::Keyboard::J)) {
-    m_cameraPos += glm::rotate(m_cameraVelocity * m_cameraDir, glm::radians(90.f)) * timeStep;
+    newPos += glm::rotate(m_cameraVelocity * m_cameraDir, glm::radians(90.f)) * timeStep;
   } else if(sf::Keyboard::isKeyPressed(sf::Keyboard::SemiColon)) {
-    m_cameraPos += glm::rotate(m_cameraVelocity * m_cameraDir, glm::radians(-90.f)) * timeStep;
+    newPos += glm::rotate(m_cameraVelocity * m_cameraDir, glm::radians(-90.f)) * timeStep;
   }
-
-  // front back movement
   if(sf::Keyboard::isKeyPressed(sf::Keyboard::L)) {
-    m_cameraPos += glm::rotate(m_cameraVelocity * m_cameraDir, glm::radians(0.f)) * timeStep;
+    newPos += glm::rotate(m_cameraVelocity * m_cameraDir, glm::radians(0.f)) * timeStep;
   } else if(sf::Keyboard::isKeyPressed(sf::Keyboard::K)) {
-    m_cameraPos += glm::rotate(m_cameraVelocity * m_cameraDir, glm::radians(180.f)) * timeStep;
+    newPos += glm::rotate(m_cameraVelocity * m_cameraDir, glm::radians(180.f)) * timeStep;
+  }
+  if(m_worldMap[newPos.x][newPos.y] == 0) {
+    m_cameraPos = newPos;
   }
 
   // camera rotation
