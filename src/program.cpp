@@ -27,7 +27,7 @@ Program::Program() :
 {
   loadTextures();
 
-  m_window.create(sf::VideoMode(m_windowSize.x, m_windowSize.y), "");
+  m_window.create(sf::VideoMode(m_windowSize.x, m_windowSize.y, sf::Style::Titlebar | sf::Style::Close), "");
   m_window.setVerticalSyncEnabled(true);
   resizePixelBuffer();
   m_texture.setSmooth(true);
