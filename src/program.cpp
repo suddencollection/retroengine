@@ -81,15 +81,6 @@ void Program::writePixelBuffer()
     cameraX *= 2;                                   // double it, now it's between 0 and 2
     cameraX -= 1;                                   // subtract 1, now it's between -1 and 1
 
-    // We don't use the Euclidean distance to the point representing
-    // player,but instead the distance to the camera plane (or, the
-    // distance of the point projected on the camera direction to the
-    // player), to avoid the fisheye effect.
-    //
-    // The fisheye effect is an effect you see if
-    // you use the real distance, where all the walls
-    // become rounded, and can make you sick if you rotate.
-    //
     auto rayDirection = glm::normalize(glm::vec2{
       m_cameraDir.x + m_cameraPlane.x * cameraX,
       m_cameraDir.y + m_cameraPlane.y * cameraX,
@@ -101,86 +92,60 @@ void Program::writePixelBuffer()
     Side hitSide = raycast(rayStart, rayDirection, &intersection, &distance, &cellPosition);
     assert(hitSide != Side::Invalid && "raycast function error");
 
-    // calculate the perpendicular distance, to avoid fisheye effect
-    //
-    // when you're really close to a wall, the euclidean distance will be really small,
-    // but the planeLength will still be increasing as cameraX increases, resulting in values
-    // that, apparently, don't form a triangle. To fix this I simply picked the smallest of
-    // the distances to substitute the perpendicular one.
-    //
-    // The result, as it seems to be, is that the vertical line of pixels filled entirely by
-    // the wall gets repeated for the remaining planeLength positions. I still don't know
-    // if this is gonna play well with textures, but its a working fix, for now.
-    //
-    float planeLength = std::min(glm::length(m_cameraPlane * cameraX), distance);
-    float perpDistance = std::sqrt(distance * distance - planeLength * planeLength); // pythagoras
+    int maxWallHeight = screenSize.y / distance;
 
-    unsigned wallHeight = std::min(screenSize.y / perpDistance, static_cast<float>(screenSize.y));
-    unsigned floorHeight = (screenSize.y - wallHeight) / 2;
-    unsigned ceillingHeight = screenSize.y - (floorHeight + wallHeight);
-    assert((floorHeight + wallHeight + ceillingHeight) == unsigned(screenSize.y));
+    int wallStart = (screenSize.y - maxWallHeight) / 2;
+    int wallEnd = wallStart + maxWallHeight; // = (screenSize.y + wallHeight) / 2;
 
-    // ceilling
-    int y = 0;
-    int maxY = ceillingHeight;
-    while(y < maxY) {
-      assert(y >= 0);
-      assert(y < static_cast<int>(screenSize.y));
+    if(wallStart < 0) { wallStart = 0; }
+    if(wallEnd > screenSize.y) { wallEnd = screenSize.y; }
+
+    // draw ceilling
+    for(int y = 0; y < wallStart; ++y) {
       framebuffer.setPixel(x, y, sf::Color::Cyan);
-      ++y;
     }
 
-    // wall
-    maxY += wallHeight;
-
-    float coordX = 0.f;
+    // draw wall
+    int coordY = wallStart;
+    int wallHeight = wallEnd - wallStart;
+    //
     glm::vec2 unitIntersection = (intersection - glm::trunc(intersection));
-    coordX = hitSide == Side::Horizontal ? unitIntersection.x :
-                                           unitIntersection.y;
-    float coordY = 0.f;
-    int pixelCount = 0;
-    assert(coordX >= 0 && coordX <= 1.f);
-    while(y < maxY) {
-      assert(y >= 0);
-      assert(y < static_cast<int>(screenSize.y));
+    float textureCoordX = hitSide == Side::Horizontal ? unitIntersection.x : unitIntersection.y;
+    glm::vec2 pixelCoords{textureCoordX * (m_textureWall.getSize().x - 1), 0.f};
+    //
+    int offscreenWallHeight = (maxWallHeight - wallHeight) / 2;
+    //
+    for(int y = 0; y < wallHeight; ++y) {
+      float textureCoordY = static_cast<float>(y + offscreenWallHeight) / maxWallHeight;
+      pixelCoords.y = textureCoordY * (m_textureWall.getSize().y - 1);
 
-      coordY = static_cast<float>(pixelCount) / wallHeight;
-      glm::vec2 pixelCoords{
-        coordX * (m_textureWall.getSize().x - 1),
-        coordY * (m_textureWall.getSize().y - 1),
-      };
-
-      framebuffer.setPixel(x, y, m_textureWall.getPixel(pixelCoords.x, pixelCoords.y));
-
-      // int maxDistance = 16;
-      // sf::Uint8 shade = 200 * (1 - std::min(1.f, perpDistance / maxDistance));
-      // framebuffer.setPixel(x, y, sf::Color{shade, shade, shade});
-      ++pixelCount;
-      ++y;
+      framebuffer.setPixel(x, coordY, m_textureWall.getPixel(pixelCoords.x, pixelCoords.y));
+      ++coordY;
     }
 
-    // floor
-    maxY += floorHeight;
-    pixelCount = 0.f;
-    while(y < maxY) {
-      assert(y >= 0);
-      assert(y < static_cast<int>(screenSize.y));
-
-      float range = static_cast<float>(pixelCount) / floorHeight;
+    // draw floor
+    coordY = wallEnd;
+    for(int y = 0; y < wallStart; ++y) {
+      float range = static_cast<float>(y) / wallStart;
       sf::Uint8 shade = 130.f * range;
-      framebuffer.setPixel(x, y, sf::Color(shade, shade, shade));
-      ++pixelCount;
-      ++y;
+      framebuffer.setPixel(x, coordY, sf::Color(shade, shade, shade));
+      ++coordY;
     }
 
-    // for(unsigned y = 0; y < m_windowSize.y; ++y) {
-    //   auto color = sf::Color{
-    //     sf::Uint8(x + (y * 2) % 255),
-    //     sf::Uint8(y - (x * 2) % 255),
-    //     sf::Uint8((x + y) % 255),
-    //   };
-    //   m_image.setPixel(x, y, color);
-    // }
+    /*
+      int maxDistance = 16;
+      sf::Uint8 shade = 200 * (1 - std::min(1.f, perpDistance / maxDistance));
+      framebuffer.setPixel(x, y, sf::Color{shade, shade, shade});
+    */
+    /*
+    for(unsigned y = 0; y < m_windowSize.y; ++y) {
+      auto color = sf::Color{
+        sf::Uint8(x + (y * 2) % 255),
+        sf::Uint8(y - (x * 2) % 255),
+        sf::Uint8((x + y) % 255),
+      };
+      framebuffer.setPixel(x, y, color);
+    */
   }
   m_texture.update(m_image);
 }
