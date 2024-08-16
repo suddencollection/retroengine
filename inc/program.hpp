@@ -38,22 +38,26 @@ private:
     float* distance,
     glm::ivec2* cellPosition) -> Side;
 
+  void drawFloor();
+  void drawWalls();
   void rotateCamera(float angle);
 
   // SFML
   sf::RenderWindow m_window;
-  sf::Vector2u m_windowSize;
+  sf::Vector2i m_windowSize;
   sf::Image m_image;
   sf::Texture m_texture;
   sf::Sprite m_sprite;
 
   // Textures
   sf::Image m_textureWall;
+  sf::Image m_textureFloor;
 
   // Camera
   float m_cameraSensitivity;
   float m_cameraVelocity;
   glm::vec2 m_cameraPos;
+  float m_cameraHeight;
   // Here the direction vector is a bit longer than the
   // camera plane, so the FOV will be smaller than 90°
   // (more precisely, the FOV is 2 * atan(0.66/1.0)=66°,

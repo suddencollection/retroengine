@@ -13,14 +13,16 @@
 
 Program::Program() :
   m_window{},
-  m_windowSize{800, 600},
+  m_windowSize{1000, 1000},
   m_image{},
   m_texture{},
   m_sprite{},
   m_textureWall{},
+  m_textureFloor{},
   m_cameraSensitivity{3},
   m_cameraVelocity{2},
   m_cameraPos{6, 12},
+  m_cameraHeight{0.5}, // 0.5 is the z position exactly in the middle between floor and ceiling.
   m_cameraDir{-1, 0},
   m_cameraPlane{0, 2 / 3.0}
 
@@ -47,11 +49,14 @@ void Program::loadTextures()
   if(!m_textureWall.loadFromFile(assetsPath + "textures/256_Tiles Circle 08.png")) {
     throw std::runtime_error("Failed to load wall texture");
   }
+  if(!m_textureFloor.loadFromFile(assetsPath + "textures/256_Tile Pattern 02 Grass.png")) {
+    throw std::runtime_error("Failed to load floor texture");
+  }
 }
 
 void Program::resizePixelBuffer()
 {
-  m_windowSize = m_window.getSize();
+  m_windowSize = {static_cast<int>(m_window.getSize().x), static_cast<int>(m_window.getSize().y)};
   m_image.create(m_windowSize.x, m_windowSize.y); // Pixel Buffer
   m_texture.create(m_windowSize.x, m_windowSize.y);
 
@@ -64,10 +69,89 @@ void Program::resizePixelBuffer()
 
 void Program::writePixelBuffer()
 {
-  glm::ivec2 screenSize{m_windowSize.x, m_windowSize.y};
-  auto& framebuffer = m_image;
+  drawFloor();
+  drawWalls();
 
-  for(int x = 0; x < screenSize.x; ++x) {
+  m_texture.update(m_image);
+}
+
+void Program::drawFloor()
+{
+  for(int y = (m_windowSize.y / 2); y < m_windowSize.y; y++) {
+    // Current y position compared to the center of the screen (the horizon)
+    int horizonOffset = y - m_windowSize.y / 2;
+    // Vertical position of the camera.
+    float posZ = m_cameraHeight * m_windowSize.y;
+    // Horizontal distance from the camera to the floor for the current row.
+    // 0.5 is the z position exactly in the middle between floor and ceiling.
+    float rowDistance = posZ / horizonOffset;
+
+    // rayDir for leftmost ray (x = 0) and rightmost ray (x = w)
+    glm::vec2 rayDirLeft = m_cameraDir - m_cameraPlane;
+    glm::vec2 rayDirRight = m_cameraDir + m_cameraPlane;
+    // calculate the real world step vector we have to add for each x (parallel to camera plane)
+    // adding step by step avoids multiplications with a weight in the inner loop
+    glm::vec2 floorStep = (rayDirRight - rayDirLeft) * (rowDistance / m_windowSize.x);
+    // glm::vec2 floorStep{
+    //   rowDistance * (rayDirRight.x - rayDirLeft.x) / m_windowSize.x,
+    //   rowDistance * (rayDirRight.y - rayDirLeft.y) / m_windowSize.x,
+    // };
+
+    // real world coordinates of the leftmost column. This will be updated as we step to the right.
+    glm::vec2 floorCoord = m_cameraPos + rowDistance * rayDirLeft;
+
+    auto const& textureSize = m_textureFloor.getSize();
+
+    for(int x = 0; x < m_windowSize.x; ++x) {
+      // the cell coord is simply got from the integer parts of floorX and floorY
+      int cellX = static_cast<int>(floorCoord.x);
+      int cellY = static_cast<int>(floorCoord.y);
+
+      // get the texture coordinate from the fractional part
+      glm::ivec2 textureCoord{
+        // WARN: (bitwise black magic)
+        static_cast<int>((floorCoord.x - cellX) * textureSize.x) & (textureSize.x - 1),
+        static_cast<int>((floorCoord.y - cellY) * textureSize.y) & (textureSize.y - 1),
+      };
+
+      floorCoord += floorStep;
+
+      // floor
+      auto color = m_textureFloor.getPixel(textureCoord.x, textureCoord.y);
+      m_image.setPixel(x, y, color);
+    }
+  }
+
+  ///// draw floor
+  // coordY = wallEnd;
+  // for(int y = 0; y < wallStart; ++y) {
+  //   float range = static_cast<float>(y) / wallStart;
+  //   sf::Uint8 shade = 130.f * range;
+  //   framebuffer.setPixel(x, coordY, sf::Color(shade, shade, shade));
+  //   ++coordY;
+  // }
+  //
+  ////
+  //
+  // int maxDistance = 16;
+  // sf::Uint8 shade = 200 * (1 - std::min(1.f, perpDistance / maxDistance));
+  // framebuffer.setPixel(x, y, sf::Color{shade, shade, shade});
+  //
+  ////
+  //
+  // for(unsigned y = 0; y < m_windowSize.y; ++y) {
+  //   auto color = sf::Color{
+  //     sf::Uint8(x + (y * 2) % 255),
+  //     sf::Uint8(y - (x * 2) % 255),
+  //     sf::Uint8((x + y) % 255),
+  //   };
+  //   framebuffer.setPixel(x, y, color);
+  // }
+}
+
+void Program::drawWalls()
+{
+  for(int x = 0; x < m_windowSize.x; ++x) {
     //
     // cameraX is the x-coordinate on the camera plane that the
     // current x-coordinate of the screen represents.
@@ -77,9 +161,9 @@ void Program::writePixelBuffer()
     // and the left side of the screen gets coordinate -1
     //
     float cameraX = 0.0;
-    cameraX = x / static_cast<float>(screenSize.x); // normalize the x position between 0 and 1
-    cameraX *= 2;                                   // double it, now it's between 0 and 2
-    cameraX -= 1;                                   // subtract 1, now it's between -1 and 1
+    cameraX = x / static_cast<float>(m_windowSize.x); // normalize the x position between 0 and 1
+    cameraX *= 2;                                     // double it, now it's between 0 and 2
+    cameraX -= 1;                                     // subtract 1, now it's between -1 and 1
 
     auto rayDirection = glm::normalize(glm::vec2{
       m_cameraDir.x + m_cameraPlane.x * cameraX,
@@ -92,17 +176,17 @@ void Program::writePixelBuffer()
     Side hitSide = raycast(rayStart, rayDirection, &intersection, &distance, &cellPosition);
     assert(hitSide != Side::Invalid && "raycast function error");
 
-    int maxWallHeight = screenSize.y / distance;
+    int maxWallHeight = m_windowSize.y / distance;
 
-    int wallStart = (screenSize.y - maxWallHeight) / 2;
-    int wallEnd = wallStart + maxWallHeight; // = (screenSize.y + wallHeight) / 2;
+    int wallStart = (m_windowSize.y - maxWallHeight) / 2;
+    int wallEnd = wallStart + maxWallHeight; // = (m_windowSize.y + wallHeight) / 2;
 
     if(wallStart < 0) { wallStart = 0; }
-    if(wallEnd > screenSize.y) { wallEnd = screenSize.y; }
+    if(wallEnd > m_windowSize.y) { wallEnd = m_windowSize.y; }
 
     // draw ceilling
     for(int y = 0; y < wallStart; ++y) {
-      framebuffer.setPixel(x, y, sf::Color::Cyan);
+      m_image.setPixel(x, y, sf::Color::Cyan);
     }
 
     // draw wall
@@ -119,35 +203,10 @@ void Program::writePixelBuffer()
       float textureCoordY = static_cast<float>(y + offscreenWallHeight) / maxWallHeight;
       pixelCoords.y = textureCoordY * (m_textureWall.getSize().y - 1);
 
-      framebuffer.setPixel(x, coordY, m_textureWall.getPixel(pixelCoords.x, pixelCoords.y));
+      m_image.setPixel(x, coordY, m_textureWall.getPixel(pixelCoords.x, pixelCoords.y));
       ++coordY;
     }
-
-    // draw floor
-    coordY = wallEnd;
-    for(int y = 0; y < wallStart; ++y) {
-      float range = static_cast<float>(y) / wallStart;
-      sf::Uint8 shade = 130.f * range;
-      framebuffer.setPixel(x, coordY, sf::Color(shade, shade, shade));
-      ++coordY;
-    }
-
-    /*
-      int maxDistance = 16;
-      sf::Uint8 shade = 200 * (1 - std::min(1.f, perpDistance / maxDistance));
-      framebuffer.setPixel(x, y, sf::Color{shade, shade, shade});
-    */
-    /*
-    for(unsigned y = 0; y < m_windowSize.y; ++y) {
-      auto color = sf::Color{
-        sf::Uint8(x + (y * 2) % 255),
-        sf::Uint8(y - (x * 2) % 255),
-        sf::Uint8((x + y) % 255),
-      };
-      framebuffer.setPixel(x, y, color);
-    */
   }
-  m_texture.update(m_image);
 }
 
 Program::Side Program::raycast(
@@ -279,13 +338,22 @@ void Program::handleKeyboardInput(float timeStep)
     rotateCamera(-m_cameraSensitivity * timeStep);
   }
 
-  // camera plane
+  // // camera plane
+  // if(sf::Keyboard::isKeyPressed(sf::Keyboard::Add)) {
+  //   m_cameraPlane *= 1 + (0.6 * timeStep); // 1.6x
+  //   spdlog::info("cameraPlane [" + std::to_string(m_cameraPlane.x) + " " + std::to_string(m_cameraPlane.y) + "]");
+  // } else if(sf::Keyboard::isKeyPressed(sf::Keyboard::Subtract)) {
+  //   m_cameraPlane *= 1 - (0.6 * timeStep); // 0.6x
+  //   spdlog::info("cameraPlane [" + std::to_string(m_cameraPlane.x) + " " + std::to_string(m_cameraPlane.y) + "]");
+  // }
+
+  // cameraHeight
   if(sf::Keyboard::isKeyPressed(sf::Keyboard::Add)) {
-    m_cameraPlane *= 1 + (0.6 * timeStep); // 1.6x
-    spdlog::info("cameraPlane [" + std::to_string(m_cameraPlane.x) + " " + std::to_string(m_cameraPlane.y) + "]");
+    m_cameraHeight += 1 * timeStep;
+    spdlog::info("cameraHeight {}", m_cameraHeight);
   } else if(sf::Keyboard::isKeyPressed(sf::Keyboard::Subtract)) {
-    m_cameraPlane *= 1 - (0.6 * timeStep); // 0.6x
-    spdlog::info("cameraPlane [" + std::to_string(m_cameraPlane.x) + " " + std::to_string(m_cameraPlane.y) + "]");
+    m_cameraHeight -= 1 * timeStep;
+    spdlog::info("cameraHeight {}", m_cameraHeight);
   }
 }
 
